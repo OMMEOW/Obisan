@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 222 47% 6%;
+  --foreground: 210 40% 98%;
+  --muted: 215 28% 17%;
+  --border: 215 28% 17%;
+  --accent: 262 83% 58%;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-slate-950 text-slate-50 antialiased;
+}
+
+a {
+  @apply text-violet-300 hover:text-violet-200;
+}

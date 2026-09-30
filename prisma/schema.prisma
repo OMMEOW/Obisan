@@ -1,0 +1,334 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SyncJobKind {
+  INITIAL_SYNC
+  INCREMENTAL_SYNC
+}
+
+enum SyncJobStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum RelationshipType {
+  SIMILARITY
+  MEMBERSHIP
+  INFLUENCE
+  DISCOVERY
+  DERIVED
+}
+
+enum EntityType {
+  USER
+  ARTIST
+  ALBUM
+  TRACK
+  PLAYLIST
+  GENRE
+}
+
+enum EmbeddingSubjectType {
+  USER
+  ARTIST
+  ALBUM
+  TRACK
+  PLAYLIST
+  GENRE
+  LISTENING_EVENT
+}
+
+model User {
+  id            String          @id @default(cuid())
+  email         String          @unique
+  displayName   String?
+  avatarUrl     String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  spotifyAccounts SpotifyAccount[]
+  listeningEvents ListeningEvent[]
+  syncJobs        SyncJob[]
+  embeddings      Embedding[]
+
+  @@index([createdAt])
+}
+
+model SpotifyAccount {
+  id                    String       @id @default(cuid())
+  userId                String
+  spotifyUserId         String       @unique
+  accessTokenCiphertext  String
+  refreshTokenCiphertext String
+  tokenType             String       @default("Bearer")
+  scopes                String
+  tokenExpiresAt        DateTime
+  spotifyDisplayName    String?
+  spotifyEmail          String?
+  spotifyCountry        String?
+  spotifyProduct        String?
+  spotifyImageUrl       String?
+  spotifyFollowers      Int?
+  syncStatus            String       @default("IDLE")
+  needsInitialSync      Boolean      @default(true)
+  lastSyncedAt          DateTime?
+  initialSyncCompletedAt DateTime?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listeningEvents ListeningEvent[]
+  syncJobs      SyncJob[]
+
+  @@index([userId])
+  @@index([syncStatus, tokenExpiresAt])
+  @@index([needsInitialSync, lastSyncedAt])
+}
+
+model Artist {
+  id          String        @id @default(cuid())
+  spotifyId   String        @unique
+  name        String
+  uri         String        @unique
+  imageUrl    String?
+  popularity  Int?
+  followers   Int?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  tracks      TrackArtist[]
+  albums      AlbumArtist[]
+  genres      ArtistGenre[]
+
+  @@index([name])
+}
+
+model Album {
+  id                  String        @id @default(cuid())
+  spotifyId           String        @unique
+  name                String
+  uri                 String        @unique
+  imageUrl            String?
+  albumType           String?
+  totalTracks         Int?
+  releaseDate         String?
+  releaseDatePrecision String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  tracks              Track[]
+  artists             AlbumArtist[]
+
+  @@index([name])
+}
+
+model Track {
+  id          String          @id @default(cuid())
+  spotifyId   String          @unique
+  name        String
+  uri         String          @unique
+  albumId     String?
+  explicit    Boolean         @default(false)
+  popularity  Int?
+  durationMs  Int?
+  discNumber  Int?
+  trackNumber Int?
+  previewUrl  String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  album       Album?          @relation(fields: [albumId], references: [id], onDelete: SetNull)
+  artists     TrackArtist[]
+  features    TrackFeature?
+  events      ListeningEvent[]
+
+  @@index([name])
+  @@index([albumId])
+}
+
+model Playlist {
+  id               String         @id @default(cuid())
+  spotifyId        String         @unique
+  name             String
+  uri              String         @unique
+  description      String?
+  imageUrl         String?
+  isPublic         Boolean?
+  collaborative    Boolean        @default(false)
+  snapshotId       String?
+  trackCount       Int?
+  ownerSpotifyId   String?
+  ownerDisplayName String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([name])
+}
+
+model Genre {
+  id            String        @id @default(cuid())
+  displayName   String
+  normalizedName String       @unique
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  artists       ArtistGenre[]
+
+  @@index([displayName])
+}
+
+model ListeningEvent {
+  id             String      @id @default(cuid())
+  dedupeKey      String      @unique
+  userId         String
+  spotifyAccountId String
+  trackId        String
+  playedAt       DateTime
+  origin         String
+  contextType    String?
+  contextUri     String?
+  createdAt      DateTime    @default(now())
+
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spotifyAccount SpotifyAccount @relation(fields: [spotifyAccountId], references: [id], onDelete: Cascade)
+  track          Track       @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@index([userId, playedAt])
+  @@index([spotifyAccountId, playedAt])
+  @@index([trackId, playedAt])
+}
+
+model TrackFeature {
+  id               String   @id @default(cuid())
+  trackId          String   @unique
+  acousticness     Float
+  danceability     Float
+  energy           Float
+  instrumentalness Float
+  liveness         Float
+  loudness         Float
+  speechiness      Float
+  tempo            Float
+  valence          Float
+  key              Int
+  mode             Int
+  timeSignature    Int
+  durationMs       Int
+  analysisVersion  String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  track Track @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@index([tempo])
+  @@index([valence])
+  @@index([energy])
+}
+
+model Relationship {
+  id            String           @id @default(cuid())
+  sourceType    EntityType
+  sourceId      String
+  targetType    EntityType
+  targetId      String
+  type          RelationshipType
+  weight        Float            @default(1)
+  confidence    Float?
+  metadata      Json?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@unique([sourceType, sourceId, targetType, targetId, type])
+  @@index([sourceType, sourceId])
+  @@index([targetType, targetId])
+  @@index([type, weight])
+}
+
+model Embedding {
+  id            String                @id @default(cuid())
+  subjectType   EmbeddingSubjectType
+  subjectId     String
+  model         String
+  dimensions    Int
+  vector        Bytes
+  contentHash   String?
+  metadata      Json?
+  userId        String?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  user          User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([subjectType, subjectId, model])
+  @@index([subjectType, subjectId])
+  @@index([model])
+}
+
+model ArtistGenre {
+  artistId String
+  genreId  String
+  createdAt DateTime @default(now())
+
+  artist   Artist @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  genre    Genre  @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@id([artistId, genreId])
+  @@index([genreId])
+}
+
+model TrackArtist {
+  trackId  String
+  artistId String
+  createdAt DateTime @default(now())
+
+  track    Track  @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  artist   Artist @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  @@id([trackId, artistId])
+  @@index([artistId])
+}
+
+model AlbumArtist {
+  albumId  String
+  artistId String
+  createdAt DateTime @default(now())
+
+  album    Album  @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  artist   Artist @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  @@id([albumId, artistId])
+  @@index([artistId])
+}
+
+model SyncJob {
+  id               String        @id @default(cuid())
+  userId           String
+  spotifyAccountId  String
+  kind             SyncJobKind
+  status           SyncJobStatus @default(PENDING)
+  runAfter         DateTime      @default(now())
+  attempts         Int           @default(0)
+  maxAttempts      Int           @default(5)
+  startedAt        DateTime?
+  lockedAt         DateTime?
+  completedAt      DateTime?
+  lastError        String?
+  payload          Json?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spotifyAccount    SpotifyAccount @relation(fields: [spotifyAccountId], references: [id], onDelete: Cascade)
+
+  @@index([status, runAfter])
+  @@index([spotifyAccountId, kind, status])
+  @@index([userId, kind])
+}
